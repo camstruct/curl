@@ -1600,6 +1600,17 @@ static size_t slist_size(struct curl_slist *s,
   return size;
 }
 
+/* Add to a mime size. An unknown size stays unknown and a sum that cannot
+   be represented becomes unknown. */
+static curl_off_t mime_size_add(curl_off_t size, curl_off_t add)
+{
+  if(size < 0)
+    return size;
+  if(add < 0 || add > CURL_OFF_T_MAX - size)
+    return -1;
+  return size + add;
+}
+
 /* Get/compute multipart size. */
 static curl_off_t multipart_size(curl_mime *mime)
 {
@@ -1619,8 +1630,8 @@ static curl_off_t multipart_size(curl_mime *mime)
     if(sz < 0)
       size = sz;
 
-    if(size >= 0)
-      size += boundarysize + sz;
+    size = mime_size_add(size, boundarysize);
+    size = mime_size_add(size, sz);
   }
 
   return size;
@@ -1641,9 +1652,14 @@ static curl_off_t mime_size(curl_mimepart *part)
 
   if(size >= 0 && !(part->flags & MIME_BODY_ONLY)) {
     /* Compute total part size. */
-    size += slist_size(part->curlheaders, 2, NULL, 0);
-    size += slist_size(part->userheaders, 2, STRCONST("Content-Type"));
-    size += 2;    /* CRLF after headers. */
+    size_t hdrsize = slist_size(part->curlheaders, 2, NULL, 0) +
+                     slist_size(part->userheaders, 2,
+                                STRCONST("Content-Type"));
+
+    if(hdrsize > (size_t)CURL_OFF_T_MAX)
+      return -1;
+    size = mime_size_add(size, (curl_off_t)hdrsize);
+    size = mime_size_add(size, 2);    /* CRLF after headers. */
   }
   return size;
 }
