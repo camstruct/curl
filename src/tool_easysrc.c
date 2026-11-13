@@ -108,10 +108,8 @@ CURLcode easysrc_add(struct slist_wc **plist, const char *line)
       return result;
   }
   list = slist_wc_append(*plist, line);
-  if(!list) {
-    easysrc_free();
+  if(!list)
     result = CURLE_OUT_OF_MEMORY;
-  }
   else
     *plist = list;
   return result;
