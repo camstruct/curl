@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+cw-pause
+</keywords>
+</info>
+
+<client>
+<features>
+unittest
+</features>
+<name>
+cw-pause flush reports a failed EOS write
+</name>
+
+</client>
+</testcase>
