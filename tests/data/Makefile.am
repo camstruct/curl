@@ -1573,6 +1573,7 @@ TESTCASES = \
   test1597 \
   test1598 \
   test1599 \
+  test1600 \
   test1601 \
   test1602 \
   test1603 \

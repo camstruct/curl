@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+share
+DNS
+libtest
+</keywords>
+</info>
+
+<reply>
+</reply>
+
+<client>
+<features>
+http
+</features>
+<name>
+resolve timeout leaves the DNS share lock released
+</name>
+<command>
+http://localhost.invalid/%TESTNUMBER
+</command>
+</client>
+</testcase>

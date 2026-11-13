@@ -703,6 +703,20 @@ out:
   return result;
 }
 
+#ifdef USE_ALARM_TIMEOUT
+static CURLcode resolv_alarm_timeout(struct Curl_easy *data,
+                                     uint8_t dns_queries,
+                                     struct Curl_peer *peer,
+                                     uint8_t transport,
+                                     bool for_proxy,
+                                     timediff_t timeout_ms,
+                                     uint32_t *presolv_id,
+                                     struct Curl_dns_entry **entry,
+                                     bool *pnegative);
+#endif
+
+/* With `alarm_timeout` set, only the resolving itself may be aborted by
+   SIGALRM. The DNS cache is never accessed while the alarm is armed. */
 static CURLcode hostip_resolv(struct Curl_easy *data,
                               uint8_t dns_queries,
                               struct Curl_peer *peer,
@@ -710,6 +724,7 @@ static CURLcode hostip_resolv(struct Curl_easy *data,
                               bool for_proxy,
                               timediff_t timeout_ms,
                               bool allowDOH,
+                              bool alarm_timeout,
                               uint32_t *presolv_id,
                               struct Curl_dns_entry **pdns)
 {
@@ -719,6 +734,9 @@ static CURLcode hostip_resolv(struct Curl_easy *data,
   bool negative = FALSE;
 
   (void)timeout_ms; /* not used in all ifdefs */
+#ifndef USE_ALARM_TIMEOUT
+  (void)alarm_timeout;
+#endif
   *presolv_id = 0;
   *pdns = NULL;
 
@@ -759,6 +777,13 @@ static CURLcode hostip_resolv(struct Curl_easy *data,
   else {
     /* No luck, we need to start resolving. */
     cache_dns = TRUE;
+#ifdef USE_ALARM_TIMEOUT
+    if(alarm_timeout)
+      result = resolv_alarm_timeout(data, dns_queries, peer, transport,
+                                    for_proxy, timeout_ms,
+                                    presolv_id, pdns, &negative);
+    else
+#endif
     result = hostip_resolv_start(data, dns_queries, peer, transport,
                                  for_proxy, timeout_ms, allowDOH,
                                  presolv_id, pdns, &negative);
@@ -809,7 +834,7 @@ CURLcode Curl_resolv_blocking(struct Curl_easy *data,
 
   /* We cannot do a blocking resolve using DoH currently */
   result = hostip_resolv(data, dns_queries, peer, transport, FALSE, 0, FALSE,
-                         &resolv_id, pdns);
+                         FALSE, &resolv_id, pdns);
   switch(result) {
   case CURLE_OK:
     DEBUGASSERT(*pdns);
@@ -849,7 +874,8 @@ static CURLcode resolv_alarm_timeout(struct Curl_easy *data,
                                      bool for_proxy,
                                      timediff_t timeout_ms,
                                      uint32_t *presolv_id,
-                                     struct Curl_dns_entry **entry)
+                                     struct Curl_dns_entry **entry,
+                                     bool *pnegative)
 {
 #ifdef HAVE_SIGACTION
   struct sigaction keep_sigact; /* store the old struct here */
@@ -892,6 +918,7 @@ static CURLcode resolv_alarm_timeout(struct Curl_easy *data,
   if(sigsetjmp(curl_jmpenv, 1)) {
     /* this is coming from a siglongjmp() after an alarm signal */
     failf(data, "name lookup timed out");
+    *pnegative = FALSE;
     result = CURLE_OPERATION_TIMEDOUT;
     goto clean_up;
   }
@@ -925,8 +952,9 @@ static CURLcode resolv_alarm_timeout(struct Curl_easy *data,
 
   /* Perform the actual name resolution. This might be interrupted by an
    * alarm if it takes too long. */
-  result = hostip_resolv(data, dns_queries, peer, transport,
-                         for_proxy, timeout_ms, FALSE, presolv_id, entry);
+  result = hostip_resolv_start(data, dns_queries, peer, transport,
+                               for_proxy, timeout_ms, FALSE,
+                               presolv_id, entry, pnegative);
 
 clean_up:
   if(!prev_alarm)
@@ -1056,8 +1084,9 @@ CURLcode Curl_resolv(struct Curl_easy *data,
       timeout_ms = 0;
     }
     if(timeout_ms && !Curl_doh_wanted(data)) {
-      return resolv_alarm_timeout(data, dns_queries, peer, transport,
-                                  for_proxy, timeout_ms, presolv_id, pdns);
+      return hostip_resolv(data, dns_queries, peer, transport,
+                           for_proxy, timeout_ms, FALSE, TRUE,
+                           presolv_id, pdns);
     }
   }
 #endif /* !USE_ALARM_TIMEOUT */
@@ -1068,7 +1097,7 @@ CURLcode Curl_resolv(struct Curl_easy *data,
 #endif
 
   return hostip_resolv(data, dns_queries, peer, transport,
-                       for_proxy, timeout_ms, TRUE, presolv_id, pdns);
+                       for_proxy, timeout_ms, TRUE, FALSE, presolv_id, pdns);
 }
 
 #ifdef USE_CURL_ASYNC
