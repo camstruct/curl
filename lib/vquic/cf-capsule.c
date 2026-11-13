@@ -41,6 +41,7 @@
 struct cf_capsule_ctx {
   struct bufq recvbuf;
   struct bufq sendbuf;
+  BIT(recv_eos); /* the filter below reported end of stream */
 };
 
 static void cf_capsule_destroy(struct Curl_cfilter *cf,
@@ -141,20 +142,29 @@ static CURLcode cf_capsule_recv(struct Curl_cfilter *cf,
   *pnread = 0;
 
   /* fill our receive buffer from the filter below */
-  while(!Curl_bufq_is_full(&ctx->recvbuf)) {
+  while(!ctx->recv_eos && !Curl_bufq_is_full(&ctx->recvbuf)) {
     result = Curl_cf_recv_bufq(cf->next, data, &ctx->recvbuf, 0, &nread);
     if(result == CURLE_AGAIN)
       break;
     if(result)
       return result;
     if(!nread)
-      break;
+      ctx->recv_eos = TRUE;
   }
 
   /* try to extract a complete capsule datagram */
   *pnread = Curl_capsule_process_udp_raw(cf, data, &ctx->recvbuf,
                                          (unsigned char *)buf, len,
                                          &result);
+  if(result == CURLE_AGAIN && ctx->recv_eos) {
+    if(Curl_bufq_is_empty(&ctx->recvbuf))
+      result = CURLE_OK;
+    else {
+      CURL_TRC_CF(data, cf, "tunnel closed inside a capsule, %zu bytes left",
+                  Curl_bufq_len(&ctx->recvbuf));
+      result = CURLE_RECV_ERROR;
+    }
+  }
   return result;
 }
 

@@ -26,6 +26,9 @@
 
 #include "bufq.h"
 #include "vquic/capsule.h"
+#include "urldata.h"
+#include "cfilters.h"
+#include "vquic/cf-capsule.h"
 
 #if defined(USE_PROXY_HTTP3) && defined(USE_NGTCP2) && \
   !defined(CURL_DISABLE_PROXY) && !defined(CURL_DISABLE_HTTP)
@@ -278,6 +281,142 @@ static void test_capsule_full_buffer_reject(void)
 
 #endif /* USE_NGTCP2 && !CURL_DISABLE_PROXY && !CURL_DISABLE_HTTP */
 
+#if !defined(CURL_DISABLE_PROXY) && !defined(CURL_DISABLE_HTTP)
+struct capsule_src {
+  const unsigned char *bytes;
+  size_t len;
+};
+
+/* hands out the bytes of its capsule_src, then reports end of stream */
+static CURLcode capsule_src_recv(struct Curl_cfilter *cf,
+                                 struct Curl_easy *data,
+                                 char *buf, size_t len, size_t *pnread)
+{
+  struct capsule_src *src = cf->ctx;
+
+  (void)data;
+  *pnread = 0;
+  if(src && src->len) {
+    *pnread = CURLMIN(len, src->len);
+    memcpy(buf, src->bytes, *pnread);
+    src->bytes += *pnread;
+    src->len -= *pnread;
+  }
+  return CURLE_OK;
+}
+
+static void capsule_src_destroy(struct Curl_cfilter *cf,
+                                struct Curl_easy *data)
+{
+  (void)cf;
+  (void)data;
+}
+
+static struct Curl_cftype capsule_src_cft = {
+  "CAPSULE-SRC",
+  0,
+  0,
+  capsule_src_destroy,
+  Curl_cf_def_connect,
+  Curl_cf_def_shutdown,
+  Curl_cf_def_adjust_pollset,
+  Curl_cf_def_data_pending,
+  Curl_cf_def_send,
+  capsule_src_recv,
+  Curl_cf_def_cntrl,
+  Curl_cf_def_conn_is_alive,
+  Curl_cf_def_conn_keep_alive,
+  Curl_cf_def_query,
+};
+
+/* head filter -> capsule filter -> source filter reading from `src` */
+static struct Curl_cfilter *capsule_chain(struct Curl_easy *data,
+                                          struct connectdata *conn,
+                                          struct capsule_src *src)
+{
+  struct Curl_cfilter *head = NULL;
+  struct Curl_cfilter *below = NULL;
+  CURLcode result;
+
+  result = Curl_cf_create(&head, &capsule_src_cft, NULL);
+  if(!result) {
+    head->conn = conn;
+    result = Curl_cf_capsule_insert_after(head, data);
+  }
+  if(!result)
+    result = Curl_cf_create(&below, &capsule_src_cft, src);
+  if(!result)
+    Curl_conn_cf_insert_after(head->next, below);
+  else
+    Curl_conn_cf_discard_chain(&head, data);
+  fail_unless(head, "failed to create filter chain");
+  return head;
+}
+
+static void test_capsule_filter_eos(void)
+{
+  struct Curl_easy *data;
+  struct connectdata conn;
+  struct Curl_cfilter *head;
+  struct Curl_cfilter *cf;
+  struct capsule_src src;
+  char out[8];
+  CURLcode result;
+  size_t nread;
+  int i;
+  /* a complete 3-byte UDP capsule followed by a truncated one */
+  static const unsigned char truncated[] = {
+    0x00, 0x04, 0x00, 0x11, 0x22, 0x33,
+    0x00, 0x04, 0x00, 0xAA
+  };
+
+  curl_global_init(CURL_GLOBAL_ALL);
+  data = curl_easy_init();
+  fail_unless(data, "failed to create easy handle");
+  if(!data)
+    goto out;
+  memset(&conn, 0, sizeof(conn));
+
+  /* the filter below is at end of stream with nothing buffered */
+  src.bytes = NULL;
+  src.len = 0;
+  head = capsule_chain(data, &conn, &src);
+  if(!head)
+    goto out;
+  cf = head->next;
+  for(i = 0; i < 2; ++i) {
+    nread = 99;
+    result = cf->cft->do_recv(cf, data, out, sizeof(out), &nread);
+    fail_unless(result == CURLE_OK, "eos: closed tunnel should return OK");
+    fail_unless(nread == 0, "eos: closed tunnel should read zero bytes");
+  }
+  Curl_conn_cf_discard_chain(&head, data);
+
+  /* the filter below ends inside a capsule */
+  src.bytes = truncated;
+  src.len = sizeof(truncated);
+  head = capsule_chain(data, &conn, &src);
+  if(!head)
+    goto out;
+  cf = head->next;
+  memset(out, 0, sizeof(out));
+  result = cf->cft->do_recv(cf, data, out, sizeof(out), &nread);
+  fail_unless(result == CURLE_OK, "eos: buffered capsule decode failed");
+  fail_unless(nread == 3, "eos: buffered capsule size mismatch");
+  fail_unless(!memcmp(out, &truncated[3], 3),
+              "eos: buffered capsule bytes mismatch");
+  result = cf->cft->do_recv(cf, data, out, sizeof(out), &nread);
+  fail_unless(result == CURLE_RECV_ERROR,
+              "eos: truncated capsule should return RECV_ERROR");
+  fail_unless(nread == 0, "eos: truncated capsule should read zero bytes");
+  Curl_conn_cf_discard_chain(&head, data);
+
+out:
+  curl_easy_cleanup(data);
+  curl_global_cleanup();
+}
+#endif /* !CURL_DISABLE_PROXY && !CURL_DISABLE_HTTP */
+
 static CURLcode test_unit3400(const char *arg)
 {
   UNITTEST_BEGIN_SIMPLE
@@ -293,6 +432,10 @@ static CURLcode test_unit3400(const char *arg)
   test_capsule_decode_paths();
   test_capsule_sequential_decode();
   test_capsule_full_buffer_reject();
+#endif
+
+#if !defined(CURL_DISABLE_PROXY) && !defined(CURL_DISABLE_HTTP)
+  test_capsule_filter_eos();
 #endif
 
   UNITTEST_END_SIMPLE
