@@ -1203,6 +1203,12 @@ static CURLcode ws_enc_send(struct Curl_easy *data,
     if(result)
       return result;
 
+    if((flags & CURLWS_OFFSET) && ((curl_off_t)buflen > fragsize)) {
+      failf(data, "[WS] unaligned frame size (sending %zu instead of "
+            "%" FMT_OFF_T ")", buflen, fragsize);
+      return CURLE_BAD_FUNCTION_ARGUMENT;
+    }
+
     result = ws_enc_write_head(data, ws, &ws->enc, flags,
                                (flags & CURLWS_OFFSET) ?
                                fragsize : (curl_off_t)buflen,

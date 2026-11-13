@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+ws
+libtest
+</keywords>
+</info>
+
+<reply>
+<data crlf="headers" nocheck="yes">
+HTTP/1.1 101 Switching Protocols
+Server: test-server/fake
+Upgrade: websocket
+Connection: Upgrade
+Something: else
+
+</data>
+# allow upgrade
+<servercmd>
+upgrade
+</servercmd>
+</reply>
+
+<client>
+<features>
+ws
+</features>
+<server>
+http
+</server>
+<name>
+ws: new frame with offset flag and buflen larger than fragsize
+</name>
+<command>
+ws://%HOSTIP:%HTTPPORT/%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<errorcode>
+43
+</errorcode>
+</verify>
+</testcase>
