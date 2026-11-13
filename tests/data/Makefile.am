@@ -1785,6 +1785,7 @@ TESTCASES = \
   test1983 \
   test1984 \
   test1985 \
+  test1986 \
   test1989 \
   test1990 \
   test1997 \

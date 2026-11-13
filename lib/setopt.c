@@ -1792,14 +1792,16 @@ static CURLcode setopt_copypostfields(const char *ptr, struct UserDefined *s)
   if(s->postfieldsize < -1)
     return CURLE_BAD_FUNCTION_ARGUMENT;
   if(!ptr || s->postfieldsize == -1) {
+    char *p = NULL;
     if(ptr && (strlen(ptr) > CURL_MAX_INPUT_LENGTH))
       return CURLE_BAD_FUNCTION_ARGUMENT;
-    curlx_safefree(s->str_copypostfields);
     if(ptr) {
-      s->str_copypostfields = curlx_strdup(ptr);
-      if(!s->str_copypostfields)
+      p = curlx_strdup(ptr);
+      if(!p)
         return CURLE_OUT_OF_MEMORY;
     }
+    curlx_free(s->str_copypostfields);
+    s->str_copypostfields = p;
   }
   else {
     size_t pflen = curlx_sotouz_range(s->postfieldsize, 0, SIZE_MAX);
