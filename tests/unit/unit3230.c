@@ -199,6 +199,114 @@ static void t3230_test_socket_all_timer_failure(void)
   curl_multi_cleanup(handle);
 }
 
+#define T3230_SOCKET ((curl_socket_t)3)
+
+struct t3230_socket_ctx {
+  int adds;
+  int removes;
+};
+
+static int t3230_socket_cb(CURL *curl, curl_socket_t s, int what,
+                           void *userp, void *socketp)
+{
+  struct t3230_socket_ctx *ctx = userp;
+  (void)curl;
+  (void)s;
+  (void)socketp;
+
+  if(what == CURL_POLL_REMOVE)
+    ++ctx->removes;
+  else
+    ++ctx->adds;
+  return 0;
+}
+
+static CURLcode t3230_pollset_result;
+
+static CURLcode t3230_doing_pollset(struct Curl_easy *data,
+                                    struct easy_pollset *ps)
+{
+  if(t3230_pollset_result)
+    return t3230_pollset_result;
+  return Curl_pollset_add_in(data, ps, T3230_SOCKET);
+}
+
+/* a transfer whose pollset cannot be determined keeps its sockets and
+   the failure is returned */
+static void t3230_test_xfer_pollset_failure(void)
+{
+  CURLM *handle = curl_multi_init();
+  CURL *curl = curl_easy_init();
+  struct Curl_multi *multi = handle;
+  struct Curl_easy *data = curl;
+  struct Curl_protocol protocol;
+  struct Curl_scheme scheme;
+  struct connectdata *conn = NULL;
+  struct t3230_socket_ctx ctx;
+  CURLMcode mresult;
+
+  memset(&ctx, 0, sizeof(ctx));
+  memset(&protocol, 0, sizeof(protocol));
+  memset(&scheme, 0, sizeof(scheme));
+  protocol.doing_pollset = t3230_doing_pollset;
+  scheme.name = "t3230";
+  scheme.run = &protocol;
+
+  if(!multi || !curl) {
+    fail("handle creation failed");
+    goto out;
+  }
+  conn = curlx_calloc(1, sizeof(*conn));
+  if(!conn) {
+    fail("connection allocation failed");
+    goto out;
+  }
+  conn->scheme = &scheme;
+  conn->sock[FIRSTSOCKET] = CURL_SOCKET_BAD;
+  conn->sock[SECONDARYSOCKET] = CURL_SOCKET_BAD;
+
+  mresult = curl_multi_setopt(handle, CURLMOPT_SOCKETDATA, &ctx);
+  fail_unless(mresult == CURLM_OK, "setting socket data failed");
+  mresult = curl_multi_setopt(handle, CURLMOPT_SOCKETFUNCTION,
+                              t3230_socket_cb);
+  fail_unless(mresult == CURLM_OK, "setting socket callback failed");
+  mresult = curl_multi_add_handle(handle, curl);
+  fail_unless(mresult == CURLM_OK, "adding easy handle failed");
+
+  data->conn = conn;
+  data->mstate = MSTATE_DO;
+
+  t3230_pollset_result = CURLE_OK;
+  mresult = Curl_multi_ev_assess_xfer(multi, data);
+  fail_unless(mresult == CURLM_OK, "assessing transfer failed");
+  fail_unless(ctx.adds == 1, "socket not announced");
+  fail_unless(!ctx.removes, "socket removed while wanted");
+
+  t3230_pollset_result = CURLE_OUT_OF_MEMORY;
+  mresult = Curl_multi_ev_assess_xfer(multi, data);
+  fail_unless(mresult == CURLM_OUT_OF_MEMORY,
+              "out of memory pollset failure not reported");
+  fail_unless(!ctx.removes, "socket removed on out of memory");
+
+  t3230_pollset_result = CURLE_FAILED_INIT;
+  mresult = Curl_multi_ev_assess_xfer(multi, data);
+  fail_unless(mresult == CURLM_INTERNAL_ERROR,
+              "pollset failure not reported");
+  fail_unless(!ctx.removes, "socket removed on pollset failure");
+
+  t3230_pollset_result = CURLE_OK;
+  data->conn = NULL;
+  data->mstate = MSTATE_INIT;
+  mresult = curl_multi_remove_handle(handle, curl);
+  fail_unless(mresult == CURLM_OK, "removing easy handle failed");
+  fail_unless(ctx.removes == 1, "socket not removed with the transfer");
+
+out:
+  curlx_free(conn);
+  curl_multi_cleanup(handle);
+  curl_easy_cleanup(curl);
+}
+
 static CURLcode test_unit3230(const char *arg)
 {
   UNITTEST_BEGIN(t3230_setup())
@@ -206,6 +314,7 @@ static CURLcode test_unit3230(const char *arg)
   t3230_test_timer_updates();
   t3230_test_add_handle_timer_failure();
   t3230_test_socket_all_timer_failure();
+  t3230_test_xfer_pollset_failure();
 
   UNITTEST_END(curl_global_cleanup())
 }
