@@ -768,6 +768,7 @@ TESTCASES = \
   test772 \
   test773 \
   test774 \
+  test775 \
   test777 \
   test778 \
   test779 \

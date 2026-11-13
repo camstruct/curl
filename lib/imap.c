@@ -588,6 +588,8 @@ static CURLcode imap_perform_login(struct Curl_easy *data,
                                    struct connectdata *conn)
 {
   CURLcode result = CURLE_OK;
+  const char *rawuser;
+  const char *rawpasswd;
   char *user;
   char *passwd;
 
@@ -600,12 +602,17 @@ static CURLcode imap_perform_login(struct Curl_easy *data,
   }
 
   /* Make sure the username and password are in the correct atom format */
-  user = imap_atom(Curl_creds_user(conn->creds), FALSE);
-  passwd = imap_atom(Curl_creds_passwd(conn->creds), FALSE);
+  rawuser = Curl_creds_user(conn->creds);
+  rawpasswd = Curl_creds_passwd(conn->creds);
+  user = imap_atom(rawuser, FALSE);
+  passwd = imap_atom(rawpasswd, FALSE);
 
-  /* Send the LOGIN command */
-  result = imap_sendf(data, imapc, "LOGIN %s %s", user ? user : "",
-                      passwd ? passwd : "");
+  if((rawuser && !user) || (rawpasswd && !passwd))
+    result = CURLE_OUT_OF_MEMORY;
+  else
+    /* Send the LOGIN command */
+    result = imap_sendf(data, imapc, "LOGIN %s %s", user ? user : "",
+                        passwd ? passwd : "");
 
   curlx_free(user);
   curlx_strzero(passwd);
