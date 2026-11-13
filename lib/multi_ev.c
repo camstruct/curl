@@ -326,6 +326,9 @@ static CURLMcode mev_sh_entry_update(struct Curl_multi *multi,
   if(((int)entry->action == comboaction)) /* nothing for socket changed */
     return CURLM_OK;
 
+  if(multi->dead) /* the callback aborted before, do not invoke it again */
+    return CURLM_OK;
+
   CURL_TRC_M(data, "ev update call(fd=%" FMT_SOCKET_T ", ev=%s%s)",
              s, (comboaction & CURL_POLL_IN) ? "IN" : "",
              (comboaction & CURL_POLL_OUT) ? "OUT" : "");
@@ -361,6 +364,7 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
   curl_socket_t s;
   unsigned int i, j;
   CURLMcode mresult;
+  CURLMcode first_error = CURLM_OK;
 
   /* The transfer `data` reports in `ps` the sockets it is interested
    * in and which combination of CURL_POLL_IN/CURL_POLL_OUT it wants
@@ -374,9 +378,11 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
   DEBUGASSERT(prev_ps);
 
   /* Handle changes to sockets the transfer is interested in. */
-  for(i = 0; i < ps->n; i++) {
+  i = 0;
+  while(i < ps->n) {
     unsigned char last_action;
     bool first_time = FALSE; /* data/conn appears first time on socket */
+    bool registered = TRUE;
 
     s = ps->sockets[i];
     /* Have we handled this socket before? */
@@ -385,9 +391,11 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
       /* new socket, add new entry */
       first_time = TRUE;
       entry = mev_sh_entry_add(&multi->ev.sh_entries, s);
-      if(!entry) /* fatal */
-        return CURLM_OUT_OF_MEMORY;
-      CURL_TRC_M(data, "ev new entry fd=%" FMT_SOCKET_T, s);
+      if(entry) {
+        CURL_TRC_M(data, "ev new entry fd=%" FMT_SOCKET_T, s);
+      }
+      else
+        registered = FALSE;
     }
     else if(conn) {
       first_time = !mev_sh_entry_conn_known(entry, conn);
@@ -402,15 +410,24 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
      * reopened. We would have cleared the sh_entry for that, but the socket
      * might still be mentioned in the hashed pollsets. */
     last_action = 0;
+    if(registered && first_time) {
+      if(conn)
+        registered = mev_sh_entry_conn_add(entry, conn);
+      else
+        registered = mev_sh_entry_xfer_add(entry, data);
+      if(!registered && !mev_sh_entry_user_count(entry))
+        mev_sh_entry_kill(multi, s);
+    }
+    if(!registered) {
+      /* neither pollset may mention a socket `data`/`conn` is not
+       * registered on, the next call would try to unregister it. */
+      Curl_pollset_remove(ps, s);
+      Curl_pollset_remove(prev_ps, s);
+      if(!first_error)
+        first_error = CURLM_OUT_OF_MEMORY;
+      continue;
+    }
     if(first_time) {
-      if(conn) {
-        if(!mev_sh_entry_conn_add(entry, conn))
-          return CURLM_OUT_OF_MEMORY;
-      }
-      else {
-        if(!mev_sh_entry_xfer_add(entry, data))
-          return CURLM_OUT_OF_MEMORY;
-      }
       CURL_TRC_M(data, "ev entry fd=%" FMT_SOCKET_T ", added %s #%" FMT_OFF_T
                  ", total=%u/%d (xfer/conn)", s,
                  conn ? "connection" : "transfer",
@@ -429,8 +446,9 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
     /* track readers/writers changes and report to socket callback */
     mresult = mev_sh_entry_update(multi, data, entry, s,
                                   last_action, ps->actions[i]);
-    if(mresult)
-      return mresult;
+    if(mresult && !first_error)
+      first_error = mresult;
+    i++;
   }
 
   /* Handle changes to sockets the transfer is NO LONGER interested in. */
@@ -479,8 +497,8 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
       /* track readers/writers changes and report to socket callback */
       mresult = mev_sh_entry_update(multi, data, entry, s,
                                     prev_ps->actions[i], 0);
-      if(mresult)
-        return mresult;
+      if(mresult && !first_error)
+        first_error = mresult;
       CURL_TRC_M(data, "ev entry fd=%" FMT_SOCKET_T ", removed transfer, "
                  "total=%u/%d (xfer/conn)", s,
                  Curl_uint32_spbset_count(&entry->xfers),
@@ -488,14 +506,14 @@ static CURLMcode mev_pollset_diff(struct Curl_multi *multi,
     }
     else {
       mresult = mev_forget_socket(multi, data, s, "last user gone");
-      if(mresult)
-        return mresult;
+      if(mresult && !first_error)
+        first_error = mresult;
     }
   } /* for loop over num */
 
   /* Remember for next time */
   Curl_pollset_move(prev_ps, ps);
-  return CURLM_OK;
+  return first_error;
 }
 
 static CURLMcode mev_assess(struct Curl_multi *multi,
