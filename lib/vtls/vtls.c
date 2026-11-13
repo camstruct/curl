@@ -728,25 +728,27 @@ static size_t multissl_version(char *buffer, size_t size)
   current = Curl_ssl == &Curl_ssl_multi ? available_backends[0] : Curl_ssl;
 
   if(current != selected) {
-    char *p = backends;
-    const char *end = backends + sizeof(backends);
+    char built[sizeof(backends)];
+    char *p = built;
+    const char *end = built + sizeof(built);
     int i;
 
-    selected = current;
-
-    backends[0] = '\0';
+    built[0] = '\0';
 
     for(i = 0; available_backends[i]; ++i) {
       char vb[200];
-      bool paren = (selected != available_backends[i]);
+      bool paren = (current != available_backends[i]);
 
       if(available_backends[i]->version(vb, sizeof(vb))) {
-        p += curl_msnprintf(p, end - p, "%s%s%s%s", (p != backends ? " " : ""),
+        p += curl_msnprintf(p, end - p, "%s%s%s%s", (p != built ? " " : ""),
                             (paren ? "(" : ""), vb, (paren ? ")" : ""));
       }
     }
 
-    backends_len = p - backends;
+    backends_len = p - built;
+    memcpy(backends, built, backends_len + 1);
+    /* marks the cache as valid, so it is set after the cache is complete */
+    selected = current;
   }
 
   if(size) {

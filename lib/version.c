@@ -569,6 +569,33 @@ static curl_version_info_data version_info = {
   NULL  /* rtmp version */
 };
 
+#ifdef GLOBAL_INIT_IS_THREADSAFE
+static curl_simple_lock version_lock = CURL_SIMPLE_LOCK_INIT;
+#define version_info_lock()   curl_simple_lock_lock(&version_lock)
+#define version_info_unlock() curl_simple_lock_unlock(&version_lock)
+#else
+#define version_info_lock()
+#define version_info_unlock()
+#endif
+
+/* Callers read the returned data without holding the lock, so data that
+   already holds the right value must never be stored again. */
+#define UPDATE(dest, value) \
+  do {                      \
+    if((dest) != (value))   \
+      (dest) = (value);     \
+  } while(0)
+
+#if defined(USE_SSL) || defined(USE_SSH) || defined(HAVE_BROTLI) || \
+  defined(HAVE_ZSTD) || (!defined(CURL_DISABLE_HTTP) && defined(USE_HTTP3))
+/* 'dest' must be at least as large as the buffer holding 'src' */
+static void update_str(char *dest, const char *src)
+{
+  if(strcmp(dest, src))
+    memcpy(dest, src, strlen(src) + 1);
+}
+#endif
+
 curl_version_info_data *curl_version_info(CURLversion stamp)
 {
   size_t n;
@@ -594,64 +621,95 @@ curl_version_info_data *curl_version_info(CURLversion stamp)
 
   (void)stamp;
 
+  version_info_lock();
+
 #ifdef USE_SSL
-  Curl_ssl_version(ssl_buffer, sizeof(ssl_buffer));
-  version_info.ssl_version = ssl_buffer;
+  {
+    char buf[sizeof(ssl_buffer)];
+    Curl_ssl_version(buf, sizeof(buf));
+    update_str(ssl_buffer, buf);
+    UPDATE(version_info.ssl_version, ssl_buffer);
+  }
 #endif
 
 #ifdef HAVE_LIBZ
-  version_info.libz_version = zlibVersion();
-  /* libz left NULL if non-existing */
+  {
+    const char *zver = zlibVersion();
+    UPDATE(version_info.libz_version, zver);
+    /* libz left NULL if non-existing */
+  }
 #endif
 #ifdef USE_ARES
   {
     int aresnum;
-    version_info.ares = ares_version(&aresnum);
-    version_info.ares_num = aresnum;
+    const char *aresver = ares_version(&aresnum);
+    UPDATE(version_info.ares, aresver);
+    UPDATE(version_info.ares_num, aresnum);
   }
 #endif
 #ifdef USE_LIBIDN2
-  /* This returns a version string if we use the given version or later,
-     otherwise it returns NULL */
-  version_info.libidn = idn2_check_version(IDN2_VERSION);
+  {
+    /* This returns a version string if we use the given version or later,
+       otherwise it returns NULL */
+    const char *idnver = idn2_check_version(IDN2_VERSION);
+    UPDATE(version_info.libidn, idnver);
+  }
 #endif
 
 #ifdef USE_SSH
-  Curl_ssh_version(ssh_buf, sizeof(ssh_buf));
-  version_info.libssh_version = ssh_buf;
+  {
+    char buf[sizeof(ssh_buf)];
+    Curl_ssh_version(buf, sizeof(buf));
+    update_str(ssh_buf, buf);
+    UPDATE(version_info.libssh_version, ssh_buf);
+  }
 #endif
 
 #ifdef HAVE_BROTLI
-  version_info.brotli_ver_num = BrotliDecoderVersion();
-  brotli_version(brotli_buffer, sizeof(brotli_buffer));
-  version_info.brotli_version = brotli_buffer;
+  {
+    char buf[sizeof(brotli_buffer)];
+    unsigned int brotlinum = BrotliDecoderVersion();
+    UPDATE(version_info.brotli_ver_num, brotlinum);
+    brotli_version(buf, sizeof(buf));
+    update_str(brotli_buffer, buf);
+    UPDATE(version_info.brotli_version, brotli_buffer);
+  }
 #endif
 
 #ifdef HAVE_ZSTD
-  version_info.zstd_ver_num = ZSTD_versionNumber();
-  zstd_version(zstd_buffer, sizeof(zstd_buffer));
-  version_info.zstd_version = zstd_buffer;
+  {
+    char buf[sizeof(zstd_buffer)];
+    unsigned int zstdnum = ZSTD_versionNumber();
+    UPDATE(version_info.zstd_ver_num, zstdnum);
+    zstd_version(buf, sizeof(buf));
+    update_str(zstd_buffer, buf);
+    UPDATE(version_info.zstd_version, zstd_buffer);
+  }
 #endif
 
 #ifdef USE_NGHTTP2
   {
     nghttp2_info *h2 = nghttp2_version(0);
-    version_info.nghttp2_ver_num = (unsigned int)h2->version_num;
-    version_info.nghttp2_version = h2->version_str;
+    unsigned int h2num = (unsigned int)h2->version_num;
+    UPDATE(version_info.nghttp2_ver_num, h2num);
+    UPDATE(version_info.nghttp2_version, h2->version_str);
   }
 #endif
 
 #if !defined(CURL_DISABLE_HTTP) && defined(USE_HTTP3)
   {
     static char quicbuffer[80];
-    Curl_quic_ver(quicbuffer, sizeof(quicbuffer));
-    version_info.quic_version = quicbuffer;
+    char buf[sizeof(quicbuffer)];
+    Curl_quic_ver(buf, sizeof(buf));
+    update_str(quicbuffer, buf);
+    UPDATE(version_info.quic_version, quicbuffer);
   }
 #endif
 
 #ifdef USE_GSASL
   {
-    version_info.gsasl_version = gsasl_check_version(NULL);
+    const char *gsaslver = gsasl_check_version(NULL);
+    UPDATE(version_info.gsasl_version, gsaslver);
   }
 #endif
 
@@ -660,15 +718,18 @@ curl_version_info_data *curl_version_info(CURLversion stamp)
   for(p = features_table; p->name; p++)
     if(!p->present || p->present(&version_info)) {
       features |= p->bitmask;
-      feature_names[n++] = p->name;
+      UPDATE(feature_names[n], p->name);
+      n++;
     }
 
 #ifdef DEBUGBUILD
   features |= CURL_VERSION_CURLDEBUG; /* for compatibility */
 #endif
 
-  feature_names[n] = NULL;  /* Terminate array. */
-  version_info.features = features;
+  UPDATE(feature_names[n], NULL);  /* Terminate array. */
+  UPDATE(version_info.features, features);
+
+  version_info_unlock();
 
   return &version_info;
 }
