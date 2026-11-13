@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+threads
+SSLKEYLOGFILE
+</keywords>
+</info>
+
+<client>
+<features>
+unittest
+SSL
+</features>
+<setenv>
+SSLKEYLOGFILE=%LOGDIR/keylog%TESTNUMBER
+</setenv>
+<name>
+TLS keylog file opened from several threads
+</name>
+</client>
+</testcase>
