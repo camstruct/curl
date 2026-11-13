@@ -932,6 +932,22 @@ static int test_width_precision(void)
   if(rc != 325)
     errors++;
 
+  /* an integer gets at most 325 digits */
+  rc = curl_msnprintf(larger, sizeof(larger), "%#.*x", INT_MAX, 0U);
+  if(rc != 327)
+    errors++;
+  rc = curl_msnprintf(larger, sizeof(larger), "%# .*x", INT_MAX, 0U);
+  if(rc != 328)
+    errors++;
+  rc = curl_msnprintf(larger, sizeof(larger), "%.*d", INT_MAX, -7);
+  if(rc != 326)
+    errors++;
+
+  rc = curl_msnprintf(larger, sizeof(larger), "%.-2147483647d", 55);
+  if(rc != 2)
+    errors++;
+  errors += string_check(larger, "55");
+
   return errors;
 }
 

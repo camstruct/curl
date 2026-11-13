@@ -234,7 +234,7 @@ static int parse_flags(const char **fmtp, unsigned int *flagsp, int use_dollar,
           return PFMT_PREC;
         precision = (int)num;
         if(is_neg)
-          precision = -precision;
+          precision = -1; /* as if omitted, like a negative parameter */
       }
       if((flags & (FLAGS_PREC | FLAGS_PRECPARAM)) ==
          (FLAGS_PREC | FLAGS_PRECPARAM))
@@ -1155,6 +1155,11 @@ static int formatf(void *userp, /* untouched by format(), sent to the
       p.prec = optr->precision;
     else
       p.prec = -1;
+
+    if((p.prec > BUFFSIZE) && (iptr->type != MTYPE_STRING))
+      /* a number never gets more digits than the work buffer holds, while
+         a string precision is a length limit to keep as given */
+      p.prec = BUFFSIZE;
 
     switch(iptr->type) {
     case MTYPE_INTU:
