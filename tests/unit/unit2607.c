@@ -38,6 +38,50 @@ static unsigned int t2607_rand(unsigned int *seed)
   return (*seed >> 16) & 0x7fff;
 }
 
+static curl_calloc_callback t2607_calloc_orig;
+static int t2607_calloc_allowed;
+
+static void *t2607_calloc(size_t nmemb, size_t size)
+{
+  if(t2607_calloc_allowed <= 0)
+    return NULL;
+  t2607_calloc_allowed--;
+  return t2607_calloc_orig(nmemb, size);
+}
+
+/* The bufq gets its first chunk, every later chunk allocation fails. */
+static void t2607_alloc_failure(size_t chunk_size)
+{
+  static uint8_t payload[2048];
+  static const uint8_t mask[4] = { 0x11, 0x22, 0x33, 0x44 };
+  struct bufq q;
+  unsigned int xori = 1;
+  size_t nwritten;
+  CURLcode result;
+
+  Curl_bufq_init2(&q, chunk_size, 1, BUFQ_OPT_SOFT_LIMIT);
+  t2607_calloc_orig = Curl_ccalloc;
+  t2607_calloc_allowed = 1;
+  Curl_ccalloc = t2607_calloc;
+
+  result = ws_enc_mask_write(mask, &xori, payload, sizeof(payload), &q,
+                             &nwritten);
+  fail_unless(result == CURLE_OK, "partial write must not fail");
+  fail_unless(nwritten == chunk_size, "queued bytes not reported");
+  fail_unless(Curl_bufq_len(&q) == nwritten,
+              "bufq length does not match nwritten");
+  fail_unless(xori == ((1 + nwritten) & 3), "xor index out of step");
+
+  result = ws_enc_mask_write(mask, &xori, payload, sizeof(payload), &q,
+                             &nwritten);
+  fail_unless(result == CURLE_OUT_OF_MEMORY, "no progress must fail");
+  fail_unless(!nwritten, "failed write must not take data");
+  fail_unless(Curl_bufq_len(&q) == chunk_size, "failed write queued data");
+
+  Curl_ccalloc = t2607_calloc_orig;
+  Curl_bufq_free(&q);
+}
+
 static CURLcode test_unit2607(const char *arg)
 {
   UNITTEST_BEGIN_SIMPLE
@@ -109,6 +153,9 @@ static CURLcode test_unit2607(const char *arg)
     fail_unless(checked + Curl_bufq_len(&q) == sent, "lost data");
     Curl_bufq_free(&q);
   }
+
+  t2607_alloc_failure(1024);
+  t2607_alloc_failure(1030);
 
   UNITTEST_END_SIMPLE
 }

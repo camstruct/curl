@@ -1083,7 +1083,7 @@ UNITTEST CURLcode ws_enc_mask_write(const uint8_t *mask, unsigned int *pxori,
 
     result = Curl_bufq_write(out, tmp, n, &nwritten);
     if(result) {
-      if((result != CURLE_AGAIN) || !done)
+      if(!done)
         return result;
       break;
     }
