@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+HSTS
+</keywords>
+</info>
+
+<client>
+<features>
+unittest
+HSTS
+</features>
+
+<file name="%LOGDIR/hsts%TESTNUMBER">
+.one.example "unlimited"
+two.example "unlimited"
+.three.example "unlimited"
+</file>
+<name>
+HSTS cache kept when saving it fails
+</name>
+<command>
+%LOGDIR/hsts%TESTNUMBER
+</command>
+</client>
+
+<verify>
+<file name="%LOGDIR/hsts%TESTNUMBER" mode="text">
+.one.example "unlimited"
+two.example "unlimited"
+.three.example "unlimited"
+</file>
+</verify>
+</testcase>

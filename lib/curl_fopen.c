@@ -92,7 +92,9 @@ CURLcode Curl_fopen(struct Curl_easy *data, const char *filename,
   *tempname = NULL;
 
 #ifndef _WIN32
-  *fh = curlx_fopen(filename, FOPEN_WRITETEXT);
+  /* append, so that a regular file keeps its contents until the complete
+     replacement is renamed over it */
+  *fh = curlx_fopen(filename, FOPEN_APPENDTEXT);
   if(!*fh)
     goto fail;
   if(curlx_fstat(fileno(*fh), &sb) == -1 || !S_ISREG(sb.st_mode)) {

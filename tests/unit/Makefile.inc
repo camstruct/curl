@@ -104,6 +104,7 @@ TESTS_C = \
   unit3219.c \
   unit3227.c \
   unit3230.c \
+  unit3237.c \
   unit3271.c \
   unit3300.c \
   unit3301.c \
