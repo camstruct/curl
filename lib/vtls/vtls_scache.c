@@ -716,13 +716,20 @@ void Curl_ssl_scache_lock(struct Curl_easy *data)
     DEBUGASSERT(!scache->is_locked);
     scache->is_locked = TRUE;
 #endif
+    data->state.ssl_scache_locked = scache;
+    data->state.ssl_scache_share =
+      CURL_SHARE_ssl_scache(data) ? data->share : NULL;
   }
 }
 
 /* Unlock shared SSL session data */
 void Curl_ssl_scache_unlock(struct Curl_easy *data)
 {
-  struct Curl_ssl_scache *scache = cf_ssl_scache_get(data);
+  struct Curl_ssl_scache *scache = data->state.ssl_scache_locked;
+  struct Curl_share *share = data->state.ssl_scache_share;
+
+  data->state.ssl_scache_locked = NULL;
+  data->state.ssl_scache_share = NULL;
   if(scache) {
 #ifdef USE_MUTEX
     Curl_mutex_acquire(&scache->mutex);
@@ -734,8 +741,8 @@ void Curl_ssl_scache_unlock(struct Curl_easy *data)
     DEBUGASSERT(scache->is_locked);
     scache->is_locked = FALSE;
 #endif
-    if(CURL_SHARE_ssl_scache(data))
-      Curl_share_unlock(data, CURL_LOCK_DATA_SSL_SESSION);
+    if(share)
+      Curl_share_unlock_share(share, data, CURL_LOCK_DATA_SSL_SESSION);
   }
 }
 

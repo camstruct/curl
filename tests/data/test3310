@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+TLS
+share
+</keywords>
+</info>
+
+<client>
+<features>
+unittest
+SSL
+</features>
+<name>
+share change refused while the TLS session cache lock is held
+</name>
+</client>
+</testcase>

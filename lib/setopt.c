@@ -1412,10 +1412,16 @@ static CURLcode setopt_mimepost(struct Curl_easy *data, curl_mime *mimep)
 static CURLcode setopt_share(struct Curl_easy *data, struct Curl_share *set)
 {
   CURLcode result;
+  bool in_use = !!data->conn;
 
-  if(data->conn) {
-    /* As this handle already has a connection attached, changing share now
-       would be complicated and error-prone */
+#ifdef USE_SSL
+  if(data->state.ssl_scache_locked)
+    in_use = TRUE;
+#endif
+  if(in_use) {
+    /* As this handle already has a connection attached or holds the TLS
+       session cache lock, changing share now would be complicated and
+       error-prone */
     infof(data, "Cannot change share object while in use");
     result = CURLE_BAD_FUNCTION_ARGUMENT;
   }

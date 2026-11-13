@@ -607,6 +607,11 @@ struct UrlState {
 
   curl_off_t last_conn_id; /* The last assigned connection or -1 */
   uint32_t last_cpid; /* last connection pool id used */
+#ifdef USE_SSL
+  /* set while this handle holds the TLS session cache lock */
+  struct Curl_ssl_scache *ssl_scache_locked;
+  struct Curl_share *ssl_scache_share; /* share locked along with it */
+#endif
 
 #if defined(USE_HTTP2) || defined(USE_HTTP3)
   int weight; /* shallow copy of data->set */
