@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+DoH
+multi
+memory callbacks
+libtest
+</keywords>
+</info>
+
+<reply>
+</reply>
+
+<client>
+<features>
+http
+DoH
+</features>
+
+<name>
+DoH probe that cannot be added to the multi fails the transfer
+</name>
+<command>
+https://%HOSTIP:%NOLISTENPORT/%TESTNUMBER
+</command>
+</client>
+</testcase>

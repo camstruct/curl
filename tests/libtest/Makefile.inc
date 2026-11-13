@@ -320,6 +320,7 @@ TESTS_C = \
   lib2504.c \
   lib2505.c \
   lib2506.c \
+  lib2507.c \
   lib2700.c \
   lib2805.c \
   lib2924.c \

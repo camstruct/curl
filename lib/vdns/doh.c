@@ -240,6 +240,7 @@ static CURLcode doh_probe_run(struct Curl_easy *data,
 {
   struct Curl_easy *doh = NULL;
   CURLcode result = CURLE_OK;
+  CURLMcode mresult;
   timediff_t timeout_ms;
   struct doh_request *doh_req;
   DOHcode d;
@@ -399,8 +400,12 @@ static CURLcode doh_probe_run(struct Curl_easy *data,
      private_data via CURLOPT_PRIVATE if they so choose. */
   DEBUGASSERT(!doh->set.private_data);
 
-  if(Curl_multi_add_handle(multi, doh))
+  mresult = Curl_multi_add_handle(multi, doh);
+  if(mresult) {
+    result = (mresult == CURLM_OUT_OF_MEMORY) ?
+      CURLE_OUT_OF_MEMORY : CURLE_FAILED_INIT;
     goto error;
+  }
 
   *pmid = doh->mid;
   return CURLE_OK;
@@ -490,8 +495,10 @@ CURLcode Curl_doh(struct Curl_easy *data,
     if(async->peer->port != PORT_HTTPS) {
       qname = curl_maprintf("_%u._https.%s",
                             async->peer->port, async->peer->hostname);
-      if(!qname)
+      if(!qname) {
+        result = CURLE_OUT_OF_MEMORY;
         goto error;
+      }
     }
     result = doh_probe_run(data, CURL_DNS_TYPE_HTTPS,
                            qname ? qname : async->peer->hostname,
