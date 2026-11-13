@@ -867,7 +867,6 @@ init_config_builder_keylog(struct Curl_easy *data,
 {
   rustls_result rr;
 
-  Curl_tls_keylog_open();
   if(!Curl_tls_keylog_enabled()) {
     return CURLE_OK;
   }
@@ -877,7 +876,6 @@ init_config_builder_keylog(struct Curl_easy *data,
                                                 NULL);
   if(rr != RUSTLS_RESULT_OK) {
     rustls_failf(data, rr, "rustls_client_config_builder_set_key_log");
-    Curl_tls_keylog_close();
     return map_error(rr);
   }
 
@@ -1488,6 +1486,12 @@ static CURLcode cr_random(struct Curl_easy *data, unsigned char *entropy,
   return map_error(rresult);
 }
 
+static int cr_init(void)
+{
+  Curl_tls_keylog_open();
+  return 1;
+}
+
 static void cr_cleanup(void)
 {
   Curl_tls_keylog_close();
@@ -1504,7 +1508,7 @@ const struct Curl_ssl Curl_ssl_rustls = {
   SSLSUPP_CRLFILE,
   sizeof(struct rustls_ssl_backend_data),
 
-  NULL,                            /* init */
+  cr_init,                         /* init */
   cr_cleanup,                      /* cleanup */
   cr_version,                      /* version */
   cr_shutdown,                     /* shutdown */

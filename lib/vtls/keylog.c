@@ -28,6 +28,7 @@
   defined(USE_RUSTLS)
 
 #include "escape.h"
+#include "easy_lock.h"
 #include "curlx/win32-fopen.h"
 
 /* The fp for the open SSLKEYLOGFILE, or NULL if not open */
@@ -35,8 +36,18 @@ static FILE *keylog_file_fp;
 /* Used for verbose logging */
 static char *keylog_file_name;
 
+#ifdef GLOBAL_INIT_IS_THREADSAFE
+static curl_simple_lock keylog_lock = CURL_SIMPLE_LOCK_INIT;
+#define keylog_file_lock()   curl_simple_lock_lock(&keylog_lock)
+#define keylog_file_unlock() curl_simple_lock_unlock(&keylog_lock)
+#else
+#define keylog_file_lock()
+#define keylog_file_unlock()
+#endif
+
 void Curl_tls_keylog_open(void)
 {
+  keylog_file_lock();
   if(!keylog_file_fp) {
     keylog_file_name = getenv("SSLKEYLOGFILE");
     if(keylog_file_name) {
@@ -54,14 +65,17 @@ void Curl_tls_keylog_open(void)
       }
     }
   }
+  keylog_file_unlock();
 }
 
 void Curl_tls_keylog_close(void)
 {
+  keylog_file_lock();
   if(keylog_file_fp) {
     curlx_fclose(keylog_file_fp);
     keylog_file_fp = NULL;
   }
+  keylog_file_unlock();
 }
 
 bool Curl_tls_keylog_enabled(void)
