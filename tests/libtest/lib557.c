@@ -1048,6 +1048,46 @@ static int test_weird_arguments(void)
 
   errors += string_check(buf, "");
 
+  /* a width cannot be both an argument and a number */
+  buf[0] = 0;
+  rc = curl_msnprintf(buf, sizeof(buf), "%*200d", 1, 2);
+  if(rc) {
+    curl_mprintf("curl_mprintf() returned %d and not 0\n", rc);
+    errors++;
+  }
+  errors += string_check(buf, "");
+
+  buf[0] = 0;
+  rc = curl_msnprintf(buf, sizeof(buf), "%*5d", 1, 2);
+  if(rc) {
+    curl_mprintf("curl_mprintf() returned %d and not 0\n", rc);
+    errors++;
+  }
+  errors += string_check(buf, "");
+
+  buf[0] = 0;
+  rc = curl_msnprintf(buf, sizeof(buf), "%2$*1$3d", 1, 2);
+  if(rc) {
+    curl_mprintf("curl_mprintf() returned %d and not 0\n", rc);
+    errors++;
+  }
+  errors += string_check(buf, "");
+
+  /* the zero flag followed by an argument width remains fine */
+  rc = curl_msnprintf(buf, sizeof(buf), "%2$0*1$d", 5, 42);
+  if(rc != 5) {
+    curl_mprintf("curl_mprintf() returned %d and not 5\n", rc);
+    errors++;
+  }
+  errors += string_check(buf, "00042");
+
+  rc = curl_msnprintf(buf, sizeof(buf), "%0*d", 5, 42);
+  if(rc != 5) {
+    curl_mprintf("curl_mprintf() returned %d and not 5\n", rc);
+    errors++;
+  }
+  errors += string_check(buf, "00042");
+
   errors += test_width_precision();
 
   if(errors)
