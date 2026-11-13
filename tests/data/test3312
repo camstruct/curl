@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="US-ASCII"?>
+<testcase>
+<info>
+<keywords>
+unittest
+threads
+</keywords>
+</info>
+
+<client>
+<features>
+unittest
+</features>
+<name>
+thrdqueue failed create ends the threads it started
+</name>
+</client>
+</testcase>
