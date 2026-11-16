@@ -249,7 +249,7 @@ static CURLcode X509V3_ext(struct Curl_easy *data,
     BIO *bio_out = BIO_new(BIO_s_mem());
 
     if(!bio_out)
-      return result;
+      return CURLE_OUT_OF_MEMORY;
 
     obj = X509_EXTENSION_get_object(ext);
 
