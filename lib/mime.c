@@ -755,7 +755,10 @@ static size_t read_part_content(curl_mimepart *part, char *buffer,
     part->lastreadstatus = sz;
     break;
   default:
-    part->state.offset += sz;
+    if(sz > bufsize)
+      sz = READ_ERROR;
+    else
+      part->state.offset += sz;
     part->lastreadstatus = sz;
     break;
   }
