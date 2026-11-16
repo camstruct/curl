@@ -376,7 +376,9 @@ CURLcode Curl_bufq_write(struct bufq *q,
   while(len) {
     tail = get_non_full_tail(q);
     if(!tail) {
-      if((q->chunk_count < q->max_chunks) || (q->opts & BUFQ_OPT_SOFT_LIMIT))
+      if(!*pnwritten &&
+         ((q->chunk_count < q->max_chunks) ||
+          (q->opts & BUFQ_OPT_SOFT_LIMIT)))
         /* should have gotten a tail, but did not */
         return CURLE_OUT_OF_MEMORY;
       break;
