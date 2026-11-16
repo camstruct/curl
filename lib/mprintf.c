@@ -315,7 +315,7 @@ static int parse_flags(const char **fmtp, unsigned int *flagsp, int use_dollar,
       break;
     }
     case '*':  /* read width from argument list */
-      flags |= FLAGS_WIDTHPARAM;
+      flags = (flags & ~(unsigned int)FLAGS_WIDTH) | FLAGS_WIDTHPARAM;
       if(use_dollar == DOLLAR_USE) {
         width = dollarstring(fmt, &fmt);
         if(width < 0)
@@ -514,8 +514,8 @@ static int parsefmt(const char *format,
         if(width < 0)
           width = param_num++;
         else {
-          /* if this identifies a parameter already used, this is illegal */
-          if(is_arg_used(usedinput, width))
+          /* a number after the asterisk or a parameter already used */
+          if((flags & FLAGS_WIDTH) || is_arg_used(usedinput, width))
             return PFMT_WIDTHARG;
         }
         if(width >= MAX_PARAMETERS)
